@@ -108,13 +108,26 @@ def log_ingestion_error(vendor: str, stage: str, file: str | None, error: Except
         "traceback": traceback.format_exc(),
     }
 
-    log_name = f"{datetime.datetime.utcnow().strftime('%Y-%m-%d_%H-%M-%S')}_ingestion_error.json"
-    blob_path = f"{RAW_PREFIX}{vendor}/logs/{log_name}"
+    filename = f"{datetime.datetime.utcnow().strftime('%Y-%m-%d_%H-%M-%S')}_ingestion_error.json"
 
-    container = blob_service.get_container_client(CONTAINER_NAME)
-    container.upload_blob(blob_path, json.dumps(log), overwrite=True)
+    # --------------------------
+    # 1. Bronze log (raw truth)
+    # --------------------------
+    bronze_path = f"{RAW_PREFIX}{vendor}/logs/{filename}"
+    blob_service.get_blob_client(CONTAINER_NAME, bronze_path).upload_blob(
+        json.dumps(log), overwrite=True
+    )
+    print(f"⚠️ Logged ingestion error → {bronze_path}")
 
-    print(f"⚠️ Logged ingestion error → {blob_path}")
+    # --------------------------
+    # 2. Silver rejected log (feedback to vendor)
+    # --------------------------
+    silver_path = f"silver/rejected/logs/vendor={vendor}/{filename}"
+    silver_container = blob_service.get_container_client(CONTAINER_NAME)
+    silver_container.upload_blob(silver_path, json.dumps(log), overwrite=True)
+
+    print(f"⚠️ Copied ingestion summary to → {silver_path}")
+
 
 
 # ---------------------------------------------

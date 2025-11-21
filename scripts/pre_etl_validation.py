@@ -1,9 +1,15 @@
 import os
 import json
 from typing import Dict, Any, List
-
+import datetime
 import pandas as pd
 import yaml
+from azure.storage.blob import BlobServiceClient
+from dotenv import load_dotenv
+load_dotenv()
+AZURE_CONN = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+blob_service = BlobServiceClient.from_connection_string(AZURE_CONN)
+
 
 # -------------------------------
 # CONFIG
@@ -343,6 +349,27 @@ def validate_assets(vendor, item_master, df_assets, cfg, errors):
 # ================================================================
 # 7. PER-VENDOR VALIDATION PIPELINE
 # ================================================================
+def upload_validation_error_to_blob(vendor: str, json_data: dict):
+    """
+    Upload validation error JSON into:
+    silver/rejected/logs/vendor=<vendor>/<timestamp>_validation_error.json
+    """
+    container = blob_service.get_container_client("bronze")  # same container as mapping
+
+    blob_name = (
+        f"silver/rejected/logs/vendor={vendor}/"
+        f"{datetime.datetime.utcnow().strftime('%Y-%m-%d_%H-%M-%S')}_validation_error.json"
+    )
+
+    container.upload_blob(
+        blob_name,
+        json.dumps(json_data, indent=2),
+        overwrite=True
+    )
+
+    print(f"  ☁️ Uploaded validation error to blob → {blob_name}")
+
+
 def process_vendor(vendor: str):
 
     print(f"\n🔵 Running validation for vendor: {vendor}")
@@ -437,17 +464,39 @@ def process_vendor(vendor: str):
 
     if errors:
         df_err = pd.DataFrame(errors)
-        # Force columns to strings for PyArrow compatibility
+
+        # Ensure Arrow-friendly dtype
         for col in ["Part Number", "Field", "Vendor", "Section", "ErrorCode", "Message"]:
             if col in df_err.columns:
                 df_err[col] = df_err[col].astype(str)
 
-        df_err.to_parquet(os.path.join(vendor_silver, "validation_errors.parquet"), index=False)
+        # ---- Silver in_review ----
+        err_parquet = os.path.join(vendor_silver, "validation_errors.parquet")
+        err_json    = os.path.join(vendor_silver, "validation_errors.json")
 
-        with open(os.path.join(vendor_silver, "validation_errors.json"), "w", encoding="utf-8") as f:
-            json.dump(errors, f, indent=2, ensure_ascii=False)
+        df_err.to_parquet(err_parquet, index=False)
+        with open(err_json, "w", encoding="utf-8") as f:
+            json.dump(errors, f, indent=2)
 
-        print("  ⚠️ Validation errors found and saved.")
+        print(f"  ⚠️ Validation errors saved → {err_parquet}")
+
+        # ---- Silver rejected (local copy) ----
+        rejected_dir = os.path.join("silver", "rejected", "logs", f"vendor={vendor}")
+        os.makedirs(rejected_dir, exist_ok=True)
+
+        rejected_json_path = os.path.join(
+            rejected_dir,
+            datetime.datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S_validation_error.json")
+        )
+
+        with open(rejected_json_path, "w", encoding="utf-8") as f:
+            json.dump(errors, f, indent=2)
+
+        print(f"  ⚠️ Validation copy saved → {rejected_json_path}")
+
+        # ---- Upload to Azure Blob Storage ----
+        upload_validation_error_to_blob(vendor, errors)
+
     else:
         print("  🎉 No validation errors for this vendor!")
 

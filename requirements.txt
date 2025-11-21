@@ -1,0 +1,7 @@
+azure-storage-blob
+python-dotenv
+lxml==5.1.0
+pandas==2.1.4
+pyyaml
+openpyxl
+pyarrow==15.0.2

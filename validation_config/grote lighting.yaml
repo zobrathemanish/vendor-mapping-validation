@@ -1,0 +1,69 @@
+vendor: "Grote Lighting"
+
+validation:
+
+  ####################################################
+  # ITEM MASTER VALIDATION
+  ####################################################
+  item_master:
+    required_fields:
+      - Part Number
+      - Vendor
+      - Product Status
+
+    # These fields exist in XML but may be missing for some SKUs → OK
+    optional_fields:
+      - Quantity UOM
+      - Quantity Size
+      - VMRS Code
+      - Barcode Number
+      - Barcode Type
+
+    unique_key: "Part Number"
+
+
+  ####################################################
+  # DESCRIPTION VALIDATION
+  ####################################################
+  descriptions:
+    code_field: "Description Code"
+    value_field: "Description Value"
+    sequence_field: "Sequence"
+
+    # Max lengths by code
+    max_length_codes:
+      DES: 60
+      SHO: 40
+
+    # A SKU MUST have DES
+    require_des_for_all_skus: True
+
+
+  ####################################################
+  # PRICING VALIDATION
+  ####################################################
+  pricing:
+    required_fields:
+      - Part Number
+      - List Price
+      - Jobber Price
+      - Pricing Amount (Net)
+      - Currency
+
+    numeric_positive_fields:
+      - List Price
+      - Jobber Price
+      - Pricing Amount (Net)
+
+    numeric_fields:
+      - Discount %
+
+    # Grote does NOT always provide all prices for all SKUs → set to False
+    require_pricing_for_all_skus: False
+
+
+  ####################################################
+  # DIGITAL ASSET VALIDATION
+  ####################################################
+  assets:
+    require_asset_for_all_skus: True

@@ -1,0 +1,182 @@
+vendor: "Grote"
+
+product_mapping:
+
+  ####################################################
+  # 1. ITEM MASTER
+  ####################################################
+  Item Master:
+    Vendor: "ns:BrandLabel"
+    Part Number: "ns:PartNumber"
+    UNSPSC: null                      # Grote does NOT send UNSPSC
+    HazmatFlag: "ns:HazardousMaterialCode"
+
+    # Product Status from EXPICode="LIS"
+    Product Status: "ns:ExtendedInformation/ns:ExtendedProductInformation[@EXPICode='LIS']/text()"
+
+    # UPC (optional)
+    Barcode Type: "ns:ItemLevelGTIN/@GTINQualifier"
+    Barcode Number: "ns:ItemLevelGTIN"
+
+    # Quantity fields (ItemQuantitySize is OPTIONAL)
+    Quantity UOM: "ns:ItemQuantitySize/@UOM"
+    Quantity Size: "ns:ItemQuantitySize"
+
+    # VMRS (optional)
+    VMRS Code: "ns:VMRSCode"
+
+
+  ####################################################
+  # 2. DESCRIPTIONS
+  ####################################################
+  Descriptions:
+    path: "ns:Descriptions/ns:Description"
+    mappings:
+      Part Number: "ancestor::ns:Item/ns:PartNumber"
+      Description Change Type: "@MaintenanceType"
+      Description Code: "@DescriptionCode"
+      Description Value: "text"
+      Sequence: "@Sequence"
+
+
+  ####################################################
+  # 3. EXTENDED INFO (EXPICodes)
+  ####################################################
+  Extended Info:
+    path: "ns:ExtendedInformation/ns:ExtendedProductInformation"
+    mappings:
+      Part Number: "ancestor::ns:Item/ns:PartNumber"
+      Extended Info Change Type: "@MaintenanceType"
+      Extended Info Code: "@EXPICode"
+      Extended Info Value: "text"
+
+
+  ####################################################
+  # 4. ATTRIBUTES
+  ####################################################
+  Attributes:
+    path: "ns:ProductAttributes/ns:ProductAttribute"
+    mappings:
+      Part Number: "ancestor::ns:Item/ns:PartNumber"
+      Attribute Change Type: "@MaintenanceType"
+      Attribute Name: "@AttributeID"
+      Attribute Value: "text"
+
+
+  ####################################################
+  # 5. PART INTERCHANGE
+  # Supports both:
+  #   <PartInterchange BrandLabel="X"><PartNumber>123</PartNumber>
+  #   <PartInterchange><PartNumber>P54-6101</PartNumber>
+  ####################################################
+  Part InterChange:
+    path: "ns:PartInterchangeInfo/ns:PartInterchange"
+    mappings:
+      Part Number: "ancestor::ns:Item/ns:PartNumber"
+      Part Interchange Change Type: "@MaintenanceType"
+      Brand Label: "@BrandLabel"
+      Interchange Part Number: "ns:PartNumber"
+
+
+  ####################################################
+  # 6. PACKAGES
+  ####################################################
+  Packages:
+    path: "ns:Packages/ns:Package"
+    mappings:
+      Part Number: "ancestor::ns:Item/ns:PartNumber"
+      Package Change Type: "@MaintenanceType"
+      Package UOM: "ns:PackageUOM"
+      Package Quantity of Eaches: "ns:QuantityofEaches"
+
+      Weight UOM: "ns:Weights/@UOM"
+      Weight: "ns:Weights/ns:Weight"
+
+      Dimension UOM: "ns:Dimensions/@UOM"
+
+      Merch Length: "ns:Dimensions/ns:MerchandisingLength"
+      Merch Width: "ns:Dimensions/ns:MerchandisingWidth"
+      Merch Height: "ns:Dimensions/ns:MerchandisingHeight"
+
+      Ship Length: "ns:Dimensions/ns:ShippingLength"
+      Ship Width: "ns:Dimensions/ns:ShippingWidth"
+      Ship Height: "ns:Dimensions/ns:ShippingHeight"
+
+
+  ####################################################
+  # 7. PRICING (XLSX)
+  ####################################################
+  Pricing:
+    source: "pricing_xlsx"
+    mappings:
+      Vendor: "Grote"
+      Part Number: "Catalogue Number"
+
+      Pricing Method: "Price Levels Provided"
+
+      # Hardcode CAD later in script? Or here:
+      Currency: "CAD"
+
+      MOQ Unit: "UOM"
+      MOQ: "Pack Size"
+
+      Pricing Change Type: null
+      Pricing Type: null
+
+      List Price: "List Price"
+      Jobber Price: "New 2025 Jobber"
+      Discount %: "Discount Off"
+      Dealer Price: "Dealer Price"
+      Pricing Amount (Net): "Net Invoice"
+
+      Multiplier: null
+
+      # EHC (Grote does not provide)
+      EHC AB_MB_SK Each: null
+      EHC AB_MB_SK Case: null
+      EHC BC Each: null
+      EHC BC Case: null
+      EHC NL Each: null
+      EHC NL Case: null
+      EHC NS Each: null
+      EHC NS Case: null
+      EHC NB_QC Each: null
+      EHC NB_QC Case: null
+      EHC PEI Each: null
+      EHC PEI Case: null
+      EHC YK Each: null
+      EHC YK Case: null
+
+      Tier Min Qty: null
+      Tier Max Qty: null
+
+      Effective Date: null
+      Start Date: null
+      End Date: null
+
+      Core Part Number: null
+      Core Cost: null
+
+      Notes: "Coming directly from Pricing(Excel) + Product file(XML)"
+
+
+  ####################################################
+  # 8. DIGITAL ASSETS
+  ####################################################
+  Digital Assets:
+    path: "ns:DigitalAssets/ns:DigitalFileInformation"
+    mappings:
+      Part Number: "ancestor::ns:Item/ns:PartNumber"
+      Digital Change Type: "@MaintenanceType"
+
+      MediaType: "ns:AssetType"
+      FileName: "ns:FileName"
+
+      # Azure asset path will be constructed in script
+      FilePath: null
+
+      FileType: "ns:FileType"
+      Representation: "ns:Representation"
+      Orientation: "ns:OrientationView"
+      Height: "ns:AssetDimensions/ns:AssetHeight"
+      Width: "ns:AssetDimensions/ns:AssetWidth"

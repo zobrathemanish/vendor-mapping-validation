@@ -105,7 +105,7 @@ def log_ingestion_error(vendor: str, stage: str, file: str | None, error: Except
         "stage": stage,
         "error_type": type(error).__name__,
         "error_message": str(error),
-        "traceback": traceback.format_exc(),
+        "traceback": traceback.format_exc()
     }
 
     filename = f"{datetime.datetime.utcnow().strftime('%Y-%m-%d_%H-%M-%S')}_ingestion_error.json"
@@ -312,7 +312,7 @@ def process_vendor(vendor: str):
     if logs:
         combined["Logs_Blobs"] = pd.DataFrame({"BlobPath": logs})
 
-        # ---------------------------
+    # ---------------------------
     # POST-PROCESSING: BUILD FilePath FOR DIGITAL ASSETS
     # ---------------------------
     if "Digital Assets" in combined:
@@ -339,6 +339,7 @@ def process_vendor(vendor: str):
         print(f"  ✅ Saved {name} → {path}")
 
     print(f"✅ Completed mapping for vendor {vendor_clean}")
+    
 
 
 # ---------------------------------------------

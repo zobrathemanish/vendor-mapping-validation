@@ -24,7 +24,7 @@ product_mapping:
 
     # VMRS (optional)
     VMRS Code: "ns:VMRSCode"
-
+    
 
   ####################################################
   # 2. DESCRIPTIONS

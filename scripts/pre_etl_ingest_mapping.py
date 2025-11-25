@@ -18,12 +18,12 @@ load_dotenv()
 CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 CONTAINER_NAME = "bronze"
 RAW_PREFIX = "raw/vendor="  # inside the bronze container
+SILVER_CONTAINER = "silver"
 
 MAPPING_OUTPUT_DIR = "mapped"
 MAPPINGS_DIR = "mappings"
 
 blob_service = BlobServiceClient.from_connection_string(CONNECTION_STRING)
-
 
 # ---------------------------------------------
 # LOAD YAML WITH VENDOR NAME FALLBACK
@@ -94,39 +94,48 @@ def download_blob_bytes(path: str) -> bytes:
     return blob.download_blob().readall()
 
 
-# ---------------------------------------------
-# INGESTION ERROR LOGGING
-# ---------------------------------------------
+# ================================================================
+# UNIFIED INGESTION ERROR LOGGING (bronze + silver- vendor facing)
+# ================================================================
 def log_ingestion_error(vendor: str, stage: str, file: str | None, error: Exception):
-    log = {
+    """
+    Writes ingestion errors to TWO PLACES:
+
+    1. bronze/raw/vendor=<vendor>/logs/...  (internal log)
+    2. silver/rejected/logs/vendor=<vendor>/...  (vendor-facing)
+    """
+
+    timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"{timestamp}_ingestion_error.json"
+
+    log_record = {
         "vendor": vendor,
         "file": file,
         "timestamp": datetime.datetime.utcnow().isoformat(),
         "stage": stage,
         "error_type": type(error).__name__,
         "error_message": str(error),
-        "traceback": traceback.format_exc()
+        "traceback": traceback.format_exc(),
     }
 
-    filename = f"{datetime.datetime.utcnow().strftime('%Y-%m-%d_%H-%M-%S')}_ingestion_error.json"
+    json_payload = json.dumps(log_record, indent=2)
 
-    # --------------------------
-    # 1. Bronze log (raw truth)
-    # --------------------------
-    bronze_path = f"{RAW_PREFIX}{vendor}/logs/{filename}"
-    blob_service.get_blob_client(CONTAINER_NAME, bronze_path).upload_blob(
-        json.dumps(log), overwrite=True
-    )
-    print(f"⚠️ Logged ingestion error → {bronze_path}")
+    # -------------------------------------------------
+    # 1. INTERNAL SYSTEM LOG → BRONZE
+    # -------------------------------------------------
+    bronze_path = f"raw/vendor={vendor}/logs/{filename}"
+    bronze_client = blob_service.get_blob_client("bronze", bronze_path)
+    bronze_client.upload_blob(json_payload, overwrite=True)
+    print(f"⚠️ Stored internal ingestion log → {bronze_path}")
 
-    # --------------------------
-    # 2. Silver rejected log (feedback to vendor)
-    # --------------------------
-    silver_path = f"silver/rejected/logs/vendor={vendor}/{filename}"
-    silver_container = blob_service.get_container_client(CONTAINER_NAME)
-    silver_container.upload_blob(silver_path, json.dumps(log), overwrite=True)
+    # -------------------------------------------------
+    # 2. VENDOR-FACING LOG → SILVER (REAL CONTAINER)
+    # -------------------------------------------------
+    silver_path = f"rejected/logs/vendor={vendor}/{filename}"
+    silver_client = blob_service.get_blob_client("silver", silver_path)
+    silver_client.upload_blob(json_payload, overwrite=True)
+    print(f"⚠️ Stored vendor-facing log → {silver_path}")
 
-    print(f"⚠️ Copied ingestion summary to → {silver_path}")
 
 
 

@@ -345,29 +345,41 @@ def validate_assets(vendor, item_master, df_assets, cfg, errors):
 
     return is_valid
 
-
 # ================================================================
 # 7. PER-VENDOR VALIDATION PIPELINE
 # ================================================================
 def upload_validation_error_to_blob(vendor: str, json_data: dict):
     """
     Upload validation error JSON into:
-    silver/rejected/logs/vendor=<vendor>/<timestamp>_validation_error.json
+    rejected/logs/vendor=<vendor>/<timestamp>_validation_error.json
     """
-    container = blob_service.get_container_client("bronze")  # same container as mapping
+    raw_container = blob_service.get_container_client("bronze")
+    silver_container = blob_service.get_container_client("silver")  # same container as mapping
 
-    blob_name = (
-        f"silver/rejected/logs/vendor={vendor}/"
+    blob_name_silver = (
+        f"rejected/logs/vendor={vendor}/"
+        f"{datetime.datetime.utcnow().strftime('%Y-%m-%d_%H-%M-%S')}_validation_error.json"
+    )
+    blob_name_raw = (
+        f"raw/logs/vendor={vendor}/"
         f"{datetime.datetime.utcnow().strftime('%Y-%m-%d_%H-%M-%S')}_validation_error.json"
     )
 
-    container.upload_blob(
-        blob_name,
+
+    silver_container.upload_blob(
+        blob_name_silver,
+        json.dumps(json_data, indent=2),
+        overwrite=True
+    )
+    print(f"  ☁️ Uploaded validation error to blob → {blob_name_silver}")
+
+    raw_container.upload_blob(
+        blob_name_raw,
         json.dumps(json_data, indent=2),
         overwrite=True
     )
 
-    print(f"  ☁️ Uploaded validation error to blob → {blob_name}")
+    print(f"  ☁️ Uploaded validation error to blob → {blob_name_raw}")
 
 
 def process_vendor(vendor: str):

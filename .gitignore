@@ -1,0 +1,12 @@
+# Environment file
+.env
+
+# Mapped Local files
+mapped/
+
+# silver local files
+silver/
+
+
+
+

@@ -6,6 +6,7 @@ import pandas as pd
 import yaml
 from azure.storage.blob import BlobServiceClient
 from dotenv import load_dotenv
+
 load_dotenv()
 AZURE_CONN = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 blob_service = BlobServiceClient.from_connection_string(AZURE_CONN)
@@ -195,8 +196,8 @@ def clean_pricing(df: pd.DataFrame) -> pd.DataFrame:
 
     # Remove $ and commas
     for col in NUMERIC_PRICE_FIELDS:
-        df[col] = df[col].apply(clean_price_generic)
-
+        if col in df.columns:
+            df[col] = df[col].apply(clean_price_generic)
 
     # Extract numeric Discount %
     if "Discount %" in df.columns:
@@ -290,26 +291,20 @@ def clean_price_generic(val):
     """
     if val is None:
         return None
-    
-    # Allow numbers, commas, periods inside long vendor text
+
     text = str(val)
 
-    # Remove currency codes & symbols
-    text = re.sub(r'[^\d.,-]', '', text)  # keep digits, . , and -
-
-    # Remove commas
+    # Remove currency codes & symbols, keep digits . , -
+    text = re.sub(r'[^\d.,-]', '', text)
     text = text.replace(",", "")
 
-    # If empty after cleaning → no numeric value
     if text.strip() == "":
         return None
 
-    # Convert to float
     try:
         return float(text)
-    except:
+    except Exception:
         return None
-
 
 
 # ================================================================
@@ -345,40 +340,54 @@ def validate_assets(vendor, item_master, df_assets, cfg, errors):
 
     return is_valid
 
+
 # ================================================================
 # 7. PER-VENDOR VALIDATION PIPELINE
 # ================================================================
-def upload_validation_error_to_blob(vendor: str, json_data: dict):
+def upload_validation_error_to_blob(vendor: str, log_record: Dict[str, Any]):
     """
     Upload validation error JSON into:
-    rejected/logs/vendor=<vendor>/<timestamp>_validation_error.json
+    bronze/raw/logs/...  and  silver/rejected/logs/vendor=<vendor>/...
+    The JSON structure matches ingestion logs:
+    {
+      "vendor": "...",
+      "file": "...",
+      "timestamp": "...",
+      "stage": "VALIDATION",
+      "error_type": "ValidationError",
+      "error_message": "...",
+      "traceback": "",
+      "details": [ ...row-level errors... ]
+    }
     """
     raw_container = blob_service.get_container_client("bronze")
     silver_container = blob_service.get_container_client("silver")  # same container as mapping
 
+    ts_str = datetime.datetime.utcnow().strftime('%Y-%m-%d_%H-%M-%S')
+
     blob_name_silver = (
         f"rejected/logs/vendor={vendor}/"
-        f"{datetime.datetime.utcnow().strftime('%Y-%m-%d_%H-%M-%S')}_validation_error.json"
+        f"{ts_str}_validation_error.json"
     )
     blob_name_raw = (
         f"raw/logs/vendor={vendor}/"
-        f"{datetime.datetime.utcnow().strftime('%Y-%m-%d_%H-%M-%S')}_validation_error.json"
+        f"{ts_str}_validation_error.json"
     )
 
+    payload = json.dumps(log_record, indent=2)
 
     silver_container.upload_blob(
         blob_name_silver,
-        json.dumps(json_data, indent=2),
+        payload,
         overwrite=True
     )
     print(f"  ☁️ Uploaded validation error to blob → {blob_name_silver}")
 
     raw_container.upload_blob(
         blob_name_raw,
-        json.dumps(json_data, indent=2),
+        payload,
         overwrite=True
     )
-
     print(f"  ☁️ Uploaded validation error to blob → {blob_name_raw}")
 
 
@@ -404,22 +413,22 @@ def process_vendor(vendor: str):
         path = os.path.join(mapped_dir, f"{name}.parquet")
         return pd.read_parquet(path) if os.path.exists(path) else None
 
-    df_item     = load_parquet("Item_Master")
-    df_desc     = load_parquet("Descriptions")
-    df_price    = load_parquet("Pricing")
-    df_assets   = load_parquet("Digital_Assets")
+    df_item   = load_parquet("Item_Master")
+    df_desc   = load_parquet("Descriptions")
+    df_price  = load_parquet("Pricing")
+    df_assets = load_parquet("Digital_Assets")
 
     if df_item is None or df_item.empty:
         print("❌ Missing Item_Master.parquet. Cannot validate.")
         return
 
-    errors = []
+    errors: List[Dict[str, Any]] = []
 
     # Run individual validators
-    item_valid   = validate_item_master(vendor, df_item, cfg["item_master"], errors)
-    desc_valid   = validate_descriptions(vendor, df_item, df_desc, cfg["descriptions"], errors) if df_desc is not None else None
-    price_valid  = validate_pricing(vendor, df_item, df_price, cfg["pricing"], errors) if df_price is not None else None
-    asset_valid  = validate_assets(vendor, df_item, df_assets, cfg["assets"], errors) if df_assets is not None else None
+    item_valid  = validate_item_master(vendor, df_item, cfg["item_master"], errors)
+    desc_valid  = validate_descriptions(vendor, df_item, df_desc, cfg["descriptions"], errors) if df_desc is not None else None
+    price_valid = validate_pricing(vendor, df_item, df_price, cfg["pricing"], errors) if df_price is not None else None
+    asset_valid = validate_assets(vendor, df_item, df_assets, cfg["assets"], errors) if df_assets is not None else None
 
     # Build SKU-level flags summary
     sku_col = "Part Number"
@@ -482,11 +491,13 @@ def process_vendor(vendor: str):
             if col in df_err.columns:
                 df_err[col] = df_err[col].astype(str)
 
-        # ---- Silver in_review ----
+        # ---- Silver in_review (parquet + JSON) ----
         err_parquet = os.path.join(vendor_silver, "validation_errors.parquet")
         err_json    = os.path.join(vendor_silver, "validation_errors.json")
 
         df_err.to_parquet(err_parquet, index=False)
+
+        # For analysts, you can still save the raw list here if you like:
         with open(err_json, "w", encoding="utf-8") as f:
             json.dump(errors, f, indent=2)
 
@@ -496,18 +507,33 @@ def process_vendor(vendor: str):
         rejected_dir = os.path.join("silver", "rejected", "logs", f"vendor={vendor}")
         os.makedirs(rejected_dir, exist_ok=True)
 
+        ts_str = datetime.datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
         rejected_json_path = os.path.join(
             rejected_dir,
-            datetime.datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S_validation_error.json")
+            f"{ts_str}_validation_error.json"
         )
 
+        # 🔴 HERE: wrap errors list into ingestion-style envelope
+        log_record: Dict[str, Any] = {
+            "vendor": vendor,
+            # here you can choose any logical reference file; this
+            # might be the mapped validation parquet or just a label
+            "file": f"mapped/vendor={vendor}/Item_Master.parquet",
+            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "stage": "VALIDATION",
+            "error_type": "ValidationError",
+            "error_message": f"{len(errors)} validation errors found.",
+            "traceback": "",
+            "details": errors,   # keep your row-level validation details here
+        }
+
         with open(rejected_json_path, "w", encoding="utf-8") as f:
-            json.dump(errors, f, indent=2)
+            json.dump(log_record, f, indent=2)
 
         print(f"  ⚠️ Validation copy saved → {rejected_json_path}")
 
-        # ---- Upload to Azure Blob Storage ----
-        upload_validation_error_to_blob(vendor, errors)
+        # ---- Upload to Azure Blob Storage (same envelope) ----
+        upload_validation_error_to_blob(vendor, log_record)
 
     else:
         print("  🎉 No validation errors for this vendor!")
